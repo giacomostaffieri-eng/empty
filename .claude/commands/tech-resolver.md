@@ -11,15 +11,18 @@ una risposta **azionabile e accurata**, senza il "dipende" di Glean e senza le i
 Problema del merchant: **$ARGUMENTS**
 
 ## Regole di verità (NON negoziabili)
-- **Rispondi SOLO da fonti checkout.com** (Confluence: guide API, tabelle codici errore, routing, 3DS/PSD2,
-  underwriting). **Cita ogni pagina** che usi.
+- **Fonti ammesse, in quest'ordine:** 1) la knowledge base locale `docs/knowledge-base/` (conoscenza pratica
+  verificata da AM/SE), 2) **Confluence** (guide API, tabelle errori, routing, 3DS/PSD2, underwriting).
+  Nient'altro. **Cita sempre** la voce/pagina usata.
 - **Vietata la parola "dipende"** da sola: se la risposta ha condizioni, elenca le condizioni (se X → fai A; se Y → fai B).
 - Se Confluence **non copre** il punto: dillo esplicitamente (`⚠️ non documentato — verificare con SE/team X`).
   **Non inventare** codici errore, endpoint o comportamenti.
 
 ## Passi
-1. Cerca in **Confluence** (`searchConfluenceUsingCql`) i termini chiave del problema: codice errore, metodo di
-   pagamento, paese, tema (3DS/PSD2/SCA, routing, acceptance, chargeback, decline reason).
+0. Leggi PRIMA `docs/knowledge-base/` e cerca una voce che copra il problema (codice, mercato, tema). Se c'è
+   ed è ad alta confidenza, è la fonte principale.
+1. Poi cerca in **Confluence** (`searchConfluenceUsingCql`) i termini chiave del problema: codice errore, metodo
+   di pagamento, paese, tema (3DS/PSD2/SCA, routing, acceptance, chargeback, decline reason).
 2. Se c'è un log/decline code, mappalo sulla tabella errori ufficiale.
 3. Ricostruisci la causa probabile e la soluzione azionabile, citando le pagine.
 

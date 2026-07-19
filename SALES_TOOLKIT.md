@@ -7,9 +7,17 @@ Questo kit trasforma Claude (già collegato al tuo stack) nel tuo co-pilota di p
 
 | Comando | Cosa fa | Dolore che risolve |
 |---|---|---|
+| ⭐ `/payment-trigger-radar <dominio o lista SF>` | Caccia segnali che i **pagamenti sono un problema ORA** (hiring payments, espansione geo, funding, RFP, gap al checkout) e assegna un Payment-Buying-Intent score con fonte+data. | Il vero valore: chiami al trigger giusto, non a freddo. Va oltre l'intent generico di 6sense. |
 | `/precall-brief <dominio>` | Brief di 1 pagina: chi chiamare, 3 leve, script cold call. Fonde Salesforce+6sense, Lusha, Slack, Confluence. | Il ping-pong Glean↔Gemini in prep discovery. |
-| `/account-prioritizer [filtro]` | Ordina i ~400 account per priorità di chiamata usando i segnali 6sense (via SF) + Lusha. | "Busso a tutti", non scalabile. Chiami solo al momento giusto. |
-| `/tech-resolver <problema>` | Risposta tecnica ancorata SOLO ai doc checkout.com, zero "dipende", + mail pronta. | Fare tu il Data Scientist/Support sotto i 12.5k MMB. |
+| `/account-prioritizer [filtro]` | Estrae e riordina i ~400 account da SF (6sense come contesto). Serve a dare la **lista** al trigger-radar. | Punto di partenza, non il criterio finale. |
+| `/tech-resolver <problema>` | Risposta tecnica da knowledge-base locale (AM/SE) + Confluence, zero "dipende", + mail pronta. | Fare tu il Data Scientist/Support sotto i 12.5k MMB. |
+
+**Flusso consigliato:** `/account-prioritizer` (lista) → `/payment-trigger-radar` (chi ha un trigger attivo) →
+`/precall-brief` (prep sui top) → chiami. Il `/tech-resolver` lo usi in prep/supporto.
+
+**Per alimentare gli strumenti:**
+- Tech Resolver → manda il questionario in `docs/tech-resolver-AM-intake.md` ad AM/SE, riempi `docs/knowledge-base/`.
+- Dati reali di acceptance rate (pitch) → vedi `docs/looker-setup.md` (Path B funziona subito via CSV+Drive).
 
 ## Come si attiva (una tantum)
 
