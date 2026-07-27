@@ -17,6 +17,9 @@ Checkout.com hace pagos ONLINE / digitales (e-commerce, DTC, in-app,
 recurrentes, cross-border). NO hacemos pagos en tienda física / POS /
 terminales. Nunca usar ganchos de "omnicanalidad tienda+online",
 "conciliación entre negocio físico y online" ni pagos en punto de venta.
+También ofrecemos PayFac / embedded payments para fintechs y plataformas:
+por eso una fintech/PSP NO es motivo automático de exclusión — puede ser un
+buen target de PayFac.
 
 ## Regla 4 — Priorizar por señal real de necesidad
 Al elegir a quién contactar, priorizar por señales reales:
@@ -25,11 +28,18 @@ Al elegir a quién contactar, priorizar por señales reales:
   alertas en Slack.
 - O industrias con cambios en curso que generen pain points accionables.
 Objetivo: contactar solo a quien probablemente tiene una necesidad real.
-Excluir del outreach en frío: clientes ya activos, cuentas con oportunidad
-abierta, y empresas que son ellas mismas proveedores de pagos/PSP.
+Excluir del outreach en frío: clientes ya activos, y cuentas con oportunidad/
+proyecto abierto o conversación en curso. OJO: ser fintech/PSP NO es exclusión
+automática (ver Regla 3, PayFac); excluir solo cuando no hay fit real.
 
 ## Contexto de segmento preferido
 - Nos gustan mucho las empresas de crédito a particulares (consumer credit).
 - En el CRM ya tenemos deals avanzados en ese sector: Smart Credito (a punto de
   cerrar), Inbestme (a punto de cerrar), y más.
 - Decathlon Italia: NO prospectar — deciden desde Francia.
+
+## Notas de cuentas (estado / fit)
+- MercadoPago: proyecto de money remittance yendo a live — NO intro en frío.
+- Zen.com: en contacto, PayFac ya pitcheado — NO intro en frío.
+- Sequra: cliente.
+- Bancomat: sin fit. Getnet: sin fit. Mooney: fit por confirmar.
