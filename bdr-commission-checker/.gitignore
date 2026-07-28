@@ -1,0 +1,11 @@
+# Never commit your own Salesforce/Workday data or generated output
+sf_opps.json
+workday*/
+paid/
+*.report.md
+tracker*.csv
+trueups*.json
+alias*.json
+!trueups.example.json
+!alias.example.json
+.env

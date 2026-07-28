@@ -19,27 +19,39 @@ Two multiplier concepts, kept distinct:
   * A merchant showing a count of "2" in the tracker = two *distinct*
     opportunity records on the same account -> two separate commissions.
 
-Usage:
+This is a self-service tool: each BDR connects it to *their own* Salesforce,
+drops in *their own* Workday CSV exports (and optionally *their own* tracker
+export), and gets a cross-check of what they earned vs what they were paid. No
+IDs or merchant names are hard-coded.
+
+Usage (connect to your own Salesforce):
     python commission_audit.py \
-        --salesforce sf_opps.json \
+        --sf-fetch \
         --paid-dir ./workday \
+        --tracker tracker.csv \
         --period 2026-01:2026-06 \
-        [--trueup trueups.json] \
-        [--alias alias.json] \
-        [--out audit.report.md]
+        [--trueup trueups.json] [--alias alias.json] [--out audit.report.md]
+
+Offline alternative (use a pre-exported opportunities file instead of --sf-fetch):
+    python commission_audit.py --salesforce sf_opps.json --paid-dir ./workday ...
 
 Inputs
 ------
---salesforce : JSON produced by the Salesforce MCP soqlQuery
-    (shape: {"records":[{...}]}) OR a CSV. Must expose the KPI date fields above,
-    Name, StageName, LeadSource, Commission_Hold__c and BDR_Name__c.
-    Query used to generate it:
+--sf-fetch : connect to your Salesforce (see salesforce_client.py / SETUP.md) and
+    pull the opportunities where you are the BDR. Auto-detects your own user id.
+
+--salesforce : offline alternative — a JSON ({"records":[{...}]}) or CSV export of
+    the same opportunities. Must expose the KPI date fields above, Name, StageName,
+    LeadSource, Commission_Hold__c. Query used:
         SELECT Name, StageName, Disco_Call_Date__c, DateSettoP1__c,
                DateSettoT1__c, Finance_Go_Live__c, LeadSource,
                Commission_Hold__c, XCommission_Hold__c
         FROM Opportunity WHERE BDR_Name__c = '<your user id>'
         AND (Disco_Call_Date__c != null OR DateSettoP1__c != null
              OR DateSettoT1__c != null)
+
+--tracker : optional CSV export of your BDR tracker (the detailed per-opportunity
+    tab). Adds a "in Salesforce but missing from the tracker" crediting-gap check.
 
 --paid-dir : folder with the Workday exports. Files are auto-classified by the
     KPI column in their header (D4/P1/T1) or by "Adjustment" content. The
@@ -193,13 +205,21 @@ class PaidRow:
 # Loading                                                                      #
 # --------------------------------------------------------------------------- #
 def load_salesforce(path: Path) -> dict[str, list[KpiEvent]]:
-    """Return {'D4':[...], 'P1':[...], 'T1':[...]} of KpiEvent."""
+    """Load Salesforce records from a JSON/CSV file and return KpiEvents."""
     text = path.read_text()
     if text.lstrip().startswith("{"):
         records = json.loads(text).get("records", [])
     else:  # CSV fallback
         records = list(csv.DictReader(text.splitlines()))
+    return events_from_records(records)
 
+
+def events_from_records(records: list[dict]) -> dict[str, list[KpiEvent]]:
+    """Return {'D4':[...], 'P1':[...], 'T1':[...]} of KpiEvent from raw SF records.
+
+    Shared by the file loader and the live Salesforce fetch, so both paths apply
+    the same eligibility rules.
+    """
     fields = {"D4": "Disco_Call_Date__c", "P1": "DateSettoP1__c", "T1": "DateSettoT1__c"}
     out: dict[str, list[KpiEvent]] = {"D4": [], "P1": [], "T1": []}
     for r in records:
@@ -295,6 +315,39 @@ def load_alias(path: Path | None) -> dict[str, list[str]]:
         if isinstance(alts, str):
             alts = [alts]
         out.setdefault(norm(sf_name), []).extend(alts)
+    return out
+
+
+def load_tracker(path: Path | None) -> dict[str, set[str]] | None:
+    """Parse a BDR tracker export (CSV) into {kpi: set(normalized names)}.
+
+    Looks for the detailed per-opportunity tab: a header row that has an
+    "Opp name"/"Opportunity" column and a "Rule" column whose values are
+    D4/P1/T1. Returns None if the file doesn't look like that layout (e.g. the
+    pivot tab), so the caller can skip the tracker cross-check gracefully.
+    """
+    if not path:
+        return None
+    rows = list(csv.reader(path.read_text().splitlines()))
+    name_col = rule_col = header_idx = None
+    for i, row in enumerate(rows[:20]):
+        low = [c.strip().lower() for c in row]
+        nc = next((j for j, c in enumerate(low) if "opp" in c and "name" in c or c == "opportunity"), None)
+        rc = next((j for j, c in enumerate(low) if c == "rule" or c.endswith(" rule")), None)
+        if nc is not None and rc is not None:
+            name_col, rule_col, header_idx = nc, rc, i
+            break
+    if header_idx is None:
+        return None
+    out: dict[str, set[str]] = {"D4": set(), "P1": set(), "T1": set()}
+    for row in rows[header_idx + 1:]:
+        if len(row) <= max(name_col, rule_col):
+            continue
+        kpi = row[rule_col].strip().upper()
+        if kpi in out:
+            key = norm(row[name_col])
+            if key:
+                out[kpi].add(key)
     return out
 
 
@@ -394,7 +447,22 @@ def kicker_summary(paid: list[PaidRow]) -> list[dict]:
 # --------------------------------------------------------------------------- #
 # Reporting                                                                    #
 # --------------------------------------------------------------------------- #
-def build_report(findings, est, kicker_rows, period) -> str:
+def tracker_gaps(sf, tracker, period):
+    """SF milestones in-period that the tracker does not list (crediting gaps).
+
+    Returns {kpi: [names]}. Only meaningful when a tracker was supplied.
+    """
+    lo, hi = period
+    gaps: dict[str, list[str]] = {"D4": [], "P1": [], "T1": []}
+    for kpi in ("D4", "P1", "T1"):
+        seen = tracker.get(kpi, set())
+        for ev in sf[kpi]:
+            if lo <= _month(ev.date) <= hi and norm(ev.name) not in seen:
+                gaps[kpi].append(ev.name.split(" - ")[0])
+    return gaps
+
+
+def build_report(findings, est, kicker_rows, period, trk_gaps=None) -> str:
     lo, hi = period
     L = [f"# Commission audit — {lo} … {hi}", ""]
     grand = 0.0
@@ -448,6 +516,22 @@ def build_report(findings, est, kicker_rows, period) -> str:
         L.append("_⚠️ = all three KPI targets met but kicker not applied — worth checking, "
                  "but confirm the outbound (>=11 D4) and 80% ICP gates, which these files do not show._")
         L.append("")
+    if trk_gaps is not None:
+        total = sum(len(v) for v in trk_gaps.values())
+        L.append("## Tracker cross-check — in Salesforce but missing from your tracker")
+        L.append("")
+        if total == 0:
+            L.append("_Every in-period Salesforce milestone is present in the tracker._")
+        else:
+            L.append("These milestones exist in Salesforce for the period but were not found "
+                     "in the tracker export — a likely crediting gap upstream of payroll:")
+            L.append("")
+            L.append("| KPI | Merchant |")
+            L.append("|---|---|")
+            for kpi in ("T1", "P1", "D4"):
+                for name in sorted(trk_gaps.get(kpi, [])):
+                    L.append(f"| {kpi} | {name} |")
+        L.append("")
     L.append("_Names matched fuzzily; confirm each against Salesforce before disputing. "
              "If a deal was paid under a renamed account, add it to --alias so it stops "
              "being flagged._")
@@ -463,25 +547,49 @@ def parse_period(s: str) -> tuple[str, str]:
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Audit BDR commissions: Salesforce vs Workday paid.")
-    ap.add_argument("--salesforce", required=True, type=Path)
-    ap.add_argument("--paid-dir", required=True, type=Path)
+    ap = argparse.ArgumentParser(
+        description="Cross-check your BDR commissions: Salesforce (earned) vs Workday (paid).")
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--sf-fetch", action="store_true",
+                     help="connect to YOUR Salesforce and pull your opportunities (see SETUP.md)")
+    src.add_argument("--salesforce", type=Path,
+                     help="use a pre-exported opportunities file (JSON or CSV) instead of --sf-fetch")
+    ap.add_argument("--paid-dir", required=True, type=Path,
+                    help="folder with your Workday commission CSV exports")
+    ap.add_argument("--tracker", type=Path,
+                    help="your BDR tracker export (CSV) — adds a crediting-gap cross-check")
     ap.add_argument("--period", default="2026-01:2026-06", type=parse_period,
                     help="YYYY-MM:YYYY-MM inclusive (default 2026-01:2026-06)")
     ap.add_argument("--trueup", type=Path, help="JSON of manually decoded true-up names")
     ap.add_argument("--alias", type=Path,
                     help="JSON mapping SF opp name -> Workday name(s) for renamed accounts")
+    ap.add_argument("--sf-cache", type=Path, default=Path("sf_opps.json"),
+                    help="where --sf-fetch writes the pulled opportunities (default sf_opps.json)")
     ap.add_argument("--out", type=Path, help="write the markdown report here")
     args = ap.parse_args(argv)
 
-    sf = load_salesforce(args.salesforce)
+    if args.sf_fetch:
+        import salesforce_client
+        n = salesforce_client.fetch_to_file(args.sf_cache)
+        print(f"Fetched {n} opportunities from Salesforce → {args.sf_cache}")
+        sf = load_salesforce(args.sf_cache)
+    else:
+        sf = load_salesforce(args.salesforce)
+
     paid, adj = load_paid(args.paid_dir)
     trueup = json.loads(args.trueup.read_text()) if args.trueup else {}
     alias = load_alias(args.alias)
 
     findings, est = reconcile(sf, paid, adj, args.period, trueup, alias)
     kicker_rows = kicker_summary(paid)
-    report = build_report(findings, est, kicker_rows, args.period)
+
+    trk = load_tracker(args.tracker)
+    trk_gaps = tracker_gaps(sf, trk, args.period) if trk is not None else None
+    if args.tracker and trk is None:
+        print("Note: could not read the tracker export as the detailed per-opportunity "
+              "layout — skipping the tracker cross-check.", file=sys.stderr)
+
+    report = build_report(findings, est, kicker_rows, args.period, trk_gaps)
 
     if args.out:
         args.out.write_text(report)

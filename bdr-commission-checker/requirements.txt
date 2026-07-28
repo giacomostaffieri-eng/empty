@@ -1,0 +1,4 @@
+# Only needed for `--sf-fetch` via session-token or username/password auth.
+# If you use the Salesforce CLI (`sf org login web`) or run offline with
+# `--salesforce <file>`, you don't need to install anything.
+simple-salesforce>=1.12
