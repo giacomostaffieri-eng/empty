@@ -3,3 +3,12 @@ token.json
 credentials.json
 __pycache__/
 *.pyc
+
+# Commission audit: never commit personal Salesforce/Workday data or reports
+sf_opps.json
+data/
+workday/
+paid/
+*.report.md
+reconcile.py
+trueups.json

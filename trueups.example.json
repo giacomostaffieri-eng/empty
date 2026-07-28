@@ -1,0 +1,6 @@
+{
+  "_comment": "Merchant names for adjustment lines that have no name (e.g. a bare 'D4 True up'). Fill from the breakdown your comp analyst emails you.",
+  "D4": ["EXAMPLE MERCHANT A", "EXAMPLE MERCHANT B"],
+  "P1": [],
+  "T1": []
+}
