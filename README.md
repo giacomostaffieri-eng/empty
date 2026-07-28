@@ -22,6 +22,26 @@ You earn a commission each time an opportunity **you are credited on**
 | **T1** | Opportunity set to **Trade** | `DateSettoT1__c` |
 | Go-live bonus | merchant goes live (Silver/Gold) | `Finance_Go_Live__c` |
 
+### Eligibility rules (applied by the tool)
+
+- **A D4 only counts if the discovery call actually happened** —
+  `Discovery_Call_Status__c == "Completed"`. A `Scheduled` no-show is not paid.
+- **Only Silver / Gold ratings are payable** (`Account_Incentive_Rating__c`);
+  Bronze is not. The rating that matters is the one *at the time of the KPI
+  event* — if a deal was downgraded to Bronze afterwards it is still owed, so the
+  tool parks current-Bronze deals in a "verify rating at event date" note rather
+  than dropping them.
+- **A milestone already reached is still owed even if the deal later dies**
+  (Disqualified / Merchant Lost). Those rows are labelled "lost after milestone".
+
+### Plan differences by year
+
+- **2025 plan**: weights were D4 50% / P1 50% / **T1 0%** — T1s earned nothing at
+  the time, but 2025 T1s were later paid retroactively at ~$410 via a true-up in
+  the Feb-2026 statement. There was **no 150% kicker** in 2025, so ignore the
+  kicker review for 2025 periods.
+- **2026 plan**: T1 is weighted and the 150% kicker applies.
+
 Two things that both get called "multiplier" but are different:
 
 - **The 150% kicker** — the `Multiplier` column in the Workday export. It is a

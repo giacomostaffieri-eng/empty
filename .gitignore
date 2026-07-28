@@ -12,3 +12,7 @@ paid/
 *.report.md
 reconcile.py
 trueups.json
+workday*/
+trueups*.json
+!trueups.example.json
+audit_*.report.md

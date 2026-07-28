@@ -124,15 +124,27 @@ def _to_iso(d: str) -> str:
     return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else ""
 
 
+_MONTHS = ("january|february|march|april|may|june|july|august|september|october|november|december")
+
+
 def _adjust_name(comment: str) -> str:
     """Extract the merchant from an adjustment comment.
 
-    Handles 'D4 True up - ALTEX ROMANIA SRL - For March', 'D4 - Adevinta True up',
-    'D4 True up - Everli - Issuing', and returns '' for a bare 'D4 True up'.
+    Handles both statement formats seen in the exports:
+      2026: 'D4 True up - ALTEX ROMANIA SRL - For March', 'D4 - Adevinta True up',
+            'D4 True up - Everli - Issuing', bare 'D4 True up' (-> '').
+      2025: 'April (D4):GOLDEN GOOSE SPA - New Business - ...',
+            'July (P1):Percassi Retail - New Business - -'.
     """
-    rest = re.sub(r"\b(D4|P1|T1)\b", " ", comment, count=1)
-    rest = re.sub(r"true\s*up", " ", rest, flags=re.I)
-    junk = re.compile(r"(?i)^(for\b|issuing$|q[1-4]$|\d{4}$|for march|for the)")
+    if not re.search(r"\b(D4|P1|T1)\b", comment):
+        return ""
+    if ":" in comment:                                  # 2025 'Month (KPI):Name'
+        rest = comment.split(":", 1)[1]
+    else:                                               # 2026 'KPI True up - Name'
+        rest = re.sub(r"\b(D4|P1|T1)\b", " ", comment, count=1)
+        rest = re.sub(r"true\s*up", " ", rest, flags=re.I)
+    rest = re.sub(rf"(?i)^\s*({_MONTHS})\b", " ", rest)  # strip a leading month name
+    junk = re.compile(rf"(?i)^(for\b|issuing$|q[1-4]$|\d{{4}}$|for the|({_MONTHS})$)")
     parts = [p.strip(" -") for p in rest.split(" - ")]
     parts = [p for p in parts if p and not junk.match(p)]
     return parts[0] if parts else ""
@@ -153,6 +165,7 @@ class KpiEvent:
     stage: str
     lead_source: str
     hold: bool
+    rating: str
 
 
 @dataclass
@@ -183,6 +196,12 @@ def load_salesforce(path: Path) -> dict[str, list[KpiEvent]]:
         hold = bool(r.get("Commission_Hold__c")) or bool(r.get("XCommission_Hold__c"))
         for kpi, f in fields.items():
             d = _to_iso(r.get(f))
+            # A D4 only earns commission if the discovery/explore call was actually
+            # held: Discovery_Call_Status__c == "Completed" (a "Scheduled" no-show
+            # never happened and is not paid). P1/T1 are stage transitions and count
+            # whenever the date is set.
+            if kpi == "D4" and (r.get("Discovery_Call_Status__c") or "").strip().lower() != "completed":
+                continue
             if d:
                 out[kpi].append(
                     KpiEvent(
@@ -191,6 +210,7 @@ def load_salesforce(path: Path) -> dict[str, list[KpiEvent]]:
                         stage=r.get("StageName", ""),
                         lead_source=r.get("LeadSource", ""),
                         hold=hold,
+                        rating=(r.get("Account_Incentive_Rating__c") or "").strip(),
                     )
                 )
     return out
@@ -286,6 +306,8 @@ def reconcile(sf, paid, adj, period, trueup):
                     "stage": ev.stage,
                     "dead": ev.stage in DEAD_STAGES,
                     "hold": ev.hold,
+                    "rating": ev.rating,
+                    "bronze": ev.rating.lower() == "bronze",
                     "est_usd": est[kpi],
                 }
             )
@@ -349,21 +371,31 @@ def build_report(findings, est, kicker_rows, period) -> str:
         items = sorted(findings[kpi], key=lambda x: x["date"])
         if not items:
             continue
-        strong = [i for i in items if not i["dead"]]
-        subtotal = sum(i["est_usd"] for i in strong)
+        # "Owed" = Silver/Gold, not on hold. Dead-but-milestone-reached still counts
+        # (a completed discovery / a set-to-Propose is earned even if the deal later
+        # dies). Bronze is parked for review: rating may have been higher at the time.
+        owed = [i for i in items if not i["bronze"] and not i["hold"]]
+        subtotal = sum(i["est_usd"] for i in owed)
         grand += subtotal
-        L.append(f"## {kpi} — {len(items)} not found in paid  (~${subtotal:,.0f} on live opps)")
+        L.append(f"## {kpi} — {len(items)} not found in paid  (~${subtotal:,.0f} owed, Silver/Gold)")
         L.append("")
-        L.append("| Merchant | KPI date | Stage | Hold | ~USD | Note |")
-        L.append("|---|---|---|---|---|---|")
+        L.append("| Merchant | KPI date | Stage | Rating | Hold | ~USD | Note |")
+        L.append("|---|---|---|---|---|---|---|")
         for i in items:
-            note = "DEAD — check policy" if i["dead"] else ("ON HOLD" if i["hold"] else "live")
+            if i["bronze"]:
+                note = "BRONZE — verify rating at event date"
+            elif i["hold"]:
+                note = "ON HOLD"
+            elif i["dead"]:
+                note = "lost after milestone — still owed"
+            else:
+                note = "owed"
             L.append(
-                f"| {i['name']} | {i['date']} | {i['stage']} | "
+                f"| {i['name']} | {i['date']} | {i['stage']} | {i['rating'] or '?'} | "
                 f"{'yes' if i['hold'] else 'no'} | {i['est_usd']:.0f} | {note} |"
             )
         L.append("")
-    L.append(f"**Estimated unpaid on live, non-held opportunities: ~${grand:,.0f}**")
+    L.append(f"**Estimated unpaid on Silver/Gold, non-held opportunities: ~${grand:,.0f}**")
     L.append(f"(base values used — D4 ${est['D4']:.0f} · P1 ${est['P1']:.0f} · T1 ${est['T1']:.0f}; "
              f"kicker months pay 1.5x)")
     L.append("")
@@ -386,6 +418,9 @@ def build_report(findings, est, kicker_rows, period) -> str:
                  "but confirm the outbound (>=11 D4) and 80% ICP gates, which these files do not show._")
         L.append("")
     L.append("_Names matched fuzzily; confirm each against Salesforce before disputing._")
+    L.append("_D4 counts only when the discovery call is Completed (not Scheduled). "
+             "Only Silver/Gold are payable; a Bronze here may still be owed if it was "
+             "Silver/Gold at the time of the KPI event — check the rating history._")
     return "\n".join(L)
 
 
