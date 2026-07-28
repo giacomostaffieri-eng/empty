@@ -60,6 +60,7 @@ python3 commission_audit.py \
     --paid-dir   workday/ \
     --period     2026-01:2026-06 \
     --trueup     trueups.json \
+    --alias      alias.json \
     --out        audit.report.md
 ```
 
@@ -102,6 +103,23 @@ emails you the breakdown, record it here so those deals aren't re-flagged:
   "T1": ["SIVOLA", "GUCCI"]
 }
 ```
+
+### 4. `--alias` — renamed accounts (optional, but important)
+
+Accounts get renamed, so the same deal can be "Electromaps" in Salesforce but
+paid as "Wall Box Chargers SL" in Workday. Name matching then reports a *paid*
+deal as missing. Map the Salesforce name to the Workday name(s) so the match
+still works — this is the single biggest source of false positives:
+
+```json
+{
+  "Electromaps": "Wall Box Chargers SL",
+  "Arcaplanet": ["Agrifarma SPA"]
+}
+```
+
+Add an entry whenever comp tells you a deal was paid under a different name.
+See `alias.example.json`.
 
 ## What the report shows
 

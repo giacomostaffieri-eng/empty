@@ -26,6 +26,7 @@ python3 commission_audit.py \
     --paid-dir   workday/ \
     --period     2026-01:2026-06 \
     --trueup     trueups.json \    # optional
+    --alias      alias.json \      # optional, see step 4
     --out        audit.report.md
 ```
 
@@ -66,6 +67,18 @@ you the breakdown, list the merchants so they aren't re-flagged:
 
 ```json
 { "D4": ["DIGITAIL", "SMEG SPA"], "P1": ["EMOTION MOBILITY"], "T1": ["SIVOLA"] }
+```
+
+### Step 4 — (optional, important) map renamed accounts → `alias.json`
+
+Accounts get renamed, so a deal can be "Electromaps" in Salesforce but paid as
+"Wall Box Chargers SL" in Workday — which makes a *paid* deal look missing. Map
+the Salesforce name to the Workday name(s) so the match still works. This is the
+biggest source of false "missing" flags, so add an entry whenever comp confirms a
+deal was paid under a different name (value can be a string or a list):
+
+```json
+{ "Electromaps": "Wall Box Chargers SL", "Arcaplanet": ["Agrifarma SPA"] }
 ```
 
 ---

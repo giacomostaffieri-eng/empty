@@ -20,3 +20,5 @@ dispute_email_draft.md
 *_email_draft.md
 email_body.html
 email_body.txt
+alias.json
+!alias.example.json

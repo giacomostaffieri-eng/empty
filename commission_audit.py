@@ -25,6 +25,7 @@ Usage:
         --paid-dir ./workday \
         --period 2026-01:2026-06 \
         [--trueup trueups.json] \
+        [--alias alias.json] \
         [--out audit.report.md]
 
 Inputs
@@ -49,6 +50,15 @@ Inputs
     comp analyst emails for a generic "D4 True up" line with no merchant name):
         {"D4": ["DIGITAIL", "SMEG", ...], "P1": [...], "T1": [...]}
     Names here are treated as already paid so they are not re-flagged.
+
+--alias : optional JSON mapping the Salesforce opportunity name to the name(s)
+    the same account is paid under in Workday. Accounts get renamed (e.g. the opp
+    that is "Electromaps" in Salesforce was paid as "Wall Box Chargers SL"), which
+    otherwise makes a paid deal look missing. Map them so the match still works:
+        {"Electromaps": "Wall Box Chargers SL", "Arcaplanet": ["Agrifarma SPA"]}
+    A value may be a single name or a list. This is the single biggest source of
+    false "missing" flags, so add an entry whenever comp tells you a deal was paid
+    under a different name.
 """
 from __future__ import annotations
 
@@ -271,6 +281,23 @@ def load_paid(paid_dir: Path) -> tuple[list[PaidRow], dict[str, set[str]]]:
     return rows, adj
 
 
+def load_alias(path: Path | None) -> dict[str, list[str]]:
+    """{normalized SF name -> [alternate names used in Workday]}.
+
+    Lets a renamed account still match its payment (see --alias in the module
+    docstring). Values may be a single string or a list.
+    """
+    if not path:
+        return {}
+    raw = json.loads(path.read_text())
+    out: dict[str, list[str]] = {}
+    for sf_name, alts in raw.items():
+        if isinstance(alts, str):
+            alts = [alts]
+        out.setdefault(norm(sf_name), []).extend(alts)
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Reconciliation                                                               #
 # --------------------------------------------------------------------------- #
@@ -283,8 +310,9 @@ def base_values(paid: list[PaidRow]) -> dict[str, float]:
     return out
 
 
-def reconcile(sf, paid, adj, period, trueup):
+def reconcile(sf, paid, adj, period, trueup, alias=None):
     lo, hi = period
+    alias = alias or {}
     paid_keys = {kpi: {norm(p.opportunity) for p in paid if p.kpi == kpi} for kpi in ("D4", "P1", "T1")}
     for kpi in ("D4", "P1", "T1"):
         paid_keys[kpi] |= adj.get(kpi, set())
@@ -296,7 +324,10 @@ def reconcile(sf, paid, adj, period, trueup):
         for ev in sf[kpi]:
             if not (lo <= _month(ev.date) <= hi):
                 continue
-            if _matches(ev.name, paid_keys[kpi]):
+            # Match by the SF name, or by any alias name the account is paid under
+            # in Workday (renames are the main cause of false "missing" flags).
+            alt_names = alias.get(norm(ev.name), [])
+            if _matches(ev.name, paid_keys[kpi]) or any(_matches(a, paid_keys[kpi]) for a in alt_names):
                 continue
             findings[kpi].append(
                 {
@@ -417,7 +448,9 @@ def build_report(findings, est, kicker_rows, period) -> str:
         L.append("_⚠️ = all three KPI targets met but kicker not applied — worth checking, "
                  "but confirm the outbound (>=11 D4) and 80% ICP gates, which these files do not show._")
         L.append("")
-    L.append("_Names matched fuzzily; confirm each against Salesforce before disputing._")
+    L.append("_Names matched fuzzily; confirm each against Salesforce before disputing. "
+             "If a deal was paid under a renamed account, add it to --alias so it stops "
+             "being flagged._")
     L.append("_D4 counts only when the discovery call is Completed (not Scheduled). "
              "Only Silver/Gold are payable; a Bronze here may still be owed if it was "
              "Silver/Gold at the time of the KPI event — check the rating history._")
@@ -436,14 +469,17 @@ def main(argv=None):
     ap.add_argument("--period", default="2026-01:2026-06", type=parse_period,
                     help="YYYY-MM:YYYY-MM inclusive (default 2026-01:2026-06)")
     ap.add_argument("--trueup", type=Path, help="JSON of manually decoded true-up names")
+    ap.add_argument("--alias", type=Path,
+                    help="JSON mapping SF opp name -> Workday name(s) for renamed accounts")
     ap.add_argument("--out", type=Path, help="write the markdown report here")
     args = ap.parse_args(argv)
 
     sf = load_salesforce(args.salesforce)
     paid, adj = load_paid(args.paid_dir)
     trueup = json.loads(args.trueup.read_text()) if args.trueup else {}
+    alias = load_alias(args.alias)
 
-    findings, est = reconcile(sf, paid, adj, args.period, trueup)
+    findings, est = reconcile(sf, paid, adj, args.period, trueup, alias)
     kicker_rows = kicker_summary(paid)
     report = build_report(findings, est, kicker_rows, args.period)
 

@@ -1,0 +1,5 @@
+{
+  "_comment": "Map a Salesforce opportunity name to the name(s) the same account is paid under in Workday. Add an entry whenever comp tells you a deal was paid under a renamed/different legal name. Value can be a string or a list.",
+  "Electromaps": "Wall Box Chargers SL",
+  "Arcaplanet": ["Agrifarma SPA"]
+}
