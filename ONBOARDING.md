@@ -18,6 +18,41 @@ git-ignored. Only the script and this guide are versioned.
 
 ---
 
+## Install
+
+There is nothing to build and no packages to install — it's a single Python file
+that uses only the standard library.
+
+**Requirement:** Python 3.8 or newer. Check what you have:
+
+```bash
+python3 --version        # e.g. Python 3.11.6 — anything 3.8+ is fine
+```
+
+macOS and Linux already ship Python 3. On Windows, install it from
+https://www.python.org/downloads/ (tick "Add python.exe to PATH") and use `python`
+instead of `python3` in the commands below.
+
+**Get the code** — either clone the repo:
+
+```bash
+git clone https://github.com/giacomostaffieri-eng/empty.git
+cd empty
+git checkout claude/commission-audit-agent-bmzon3    # branch with the tool
+```
+
+…or, if you don't need the whole repo, just download the single file
+`commission_audit.py` from that branch and drop it in a new folder.
+
+**Verify it runs:**
+
+```bash
+python3 commission_audit.py --help
+```
+
+You should see the usage/options. That's it — no `pip install`, no virtualenv.
+(Optional: `chmod +x commission_audit.py` to run it as `./commission_audit.py`.)
+
 ## Quick start (5 minutes)
 
 ```bash
