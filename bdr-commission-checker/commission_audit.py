@@ -85,6 +85,17 @@ from pathlib import Path
 
 DEAD_STAGES = {"Disqualified", "Merchant Lost", "Closed/Lost", "Closed Lost", "Closed Won Lost"}
 
+# 150% kicker gates (L2 BDR). All must hold for a quarter to accelerate:
+#   1. 100% of quarterly target on all three KPIs (D4, P1, T1);
+#   2. outbound D4 >= 70% of the D4 target;
+#   3. ICP-compliant D4 >= 80% of the D4 target.
+# Gate 3 needs an ICP flag that the standard export does not carry, so it is
+# reported as "unverifiable" rather than assumed. Adjust the outbound sources to
+# match how your org labels LeadSource.
+KICKER_OUTBOUND_FRACTION = 0.70
+KICKER_ICP_FRACTION = 0.80
+OUTBOUND_SOURCES = {"outbound"}
+
 # Words dropped when reducing an opportunity/merchant name to a comparison key.
 _STOP = {
     "SPA", "SRL", "SL", "SA", "SAU", "SLU", "LTD", "LIMITED", "INC", "GROUP",
@@ -405,42 +416,62 @@ def _quarter(stmt: str) -> str:
     return f"{y}-Q{(m - 1) // 3 + 1}"
 
 
-def kicker_summary(paid: list[PaidRow]) -> list[dict]:
-    """Per quarter/KPI attainment, and whether the 150% kicker was applied.
+def kicker_check(sf, paid: list[PaidRow]) -> list[dict]:
+    """Per-quarter 150% kicker verdict against the real gates.
 
-    The kicker requires ALL of: D4, P1 and T1 targets hit, >=11 outbound D4s, and
-    >=80% ICP D4s. Outbound/ICP cannot be judged from these files, so this is a
-    review aid — it does not assert an error on its own.
+    Evaluates gate 1 (all three targets) from Workday QTD, gate 2 (outbound D4
+    share) from Salesforce LeadSource, and reports gate 3 (ICP) as unverifiable
+    since the export carries no ICP flag. Also sums base-rate (1x) vs accelerated
+    (1.5x) USD per quarter: when a quarter clears the gates but still has base-rate
+    milestones, that 0.5x delta is a *potential* underpayment worth querying —
+    depending on whether your plan accelerates the whole quarter or only the units
+    above target.
     """
-    q: dict[tuple[str, str], dict] = {}
+    q: dict[str, dict] = {}
     for p in paid:
-        k = (_quarter(p.statement), p.kpi)
-        d = q.setdefault(k, {"target": p.target, "max_qtd": 0.0, "kicker": False})
+        quarter = _quarter(p.statement)
+        if quarter == "?":
+            continue
+        e = q.setdefault(quarter, {"kpi": {}, "base_usd": 0.0, "accel_usd": 0.0})
+        d = e["kpi"].setdefault(p.kpi, {"target": 0.0, "qtd": 0.0, "kicker": False})
         d["target"] = p.target or d["target"]
-        d["max_qtd"] = max(d["max_qtd"], p.qtd)
-        d["kicker"] = d["kicker"] or p.multiplier >= 2
+        d["qtd"] = max(d["qtd"], p.qtd)
+        if p.multiplier >= 2:
+            d["kicker"] = True
+            e["accel_usd"] += p.usd
+        else:
+            e["base_usd"] += p.usd
+
+    outbound_d4: dict[str, int] = {}
+    for ev in sf.get("D4", []):
+        if ev.lead_source.strip().lower() in OUTBOUND_SOURCES:
+            qq = _quarter(ev.date)
+            outbound_d4[qq] = outbound_d4.get(qq, 0) + 1
+
     rows = []
-    quarters = sorted({qk for qk, _ in q})
-    for quarter in quarters:
-        all_targets = all(
-            q.get((quarter, kpi), {}).get("max_qtd", 0) >= q.get((quarter, kpi), {}).get("target", 1)
-            for kpi in ("D4", "P1", "T1")
-            if (quarter, kpi) in q
+    for quarter in sorted(q):
+        kp = q[quarter]["kpi"]
+        have_all = all(k in kp for k in ("D4", "P1", "T1"))
+        targets_met = (
+            all(kp[k]["qtd"] >= kp[k]["target"] > 0 for k in ("D4", "P1", "T1"))
+            if have_all else None
         )
-        for kpi in ("D4", "P1", "T1"):
-            d = q.get((quarter, kpi))
-            if not d:
-                continue
-            rows.append(
-                {
-                    "quarter": quarter,
-                    "kpi": kpi,
-                    "target": d["target"],
-                    "max_qtd": d["max_qtd"],
-                    "kicker_applied": d["kicker"],
-                    "all_targets_met": all_targets,
-                }
-            )
+        d4_target = kp.get("D4", {}).get("target", 0)
+        outb = outbound_d4.get(quarter, 0)
+        outbound_ok = outb >= KICKER_OUTBOUND_FRACTION * d4_target if d4_target else None
+        applied = any(v.get("kicker") for v in kp.values())
+        rows.append({
+            "quarter": quarter,
+            "kpi": kp,
+            "targets_met": targets_met,
+            "outbound_d4": outb,
+            "outbound_need": round(KICKER_OUTBOUND_FRACTION * d4_target, 1) if d4_target else None,
+            "icp_need": round(KICKER_ICP_FRACTION * d4_target, 1) if d4_target else None,
+            "outbound_ok": outbound_ok,
+            "kicker_applied": applied,
+            "base_usd": q[quarter]["base_usd"],
+            "accel_usd": q[quarter]["accel_usd"],
+        })
     return rows
 
 
@@ -499,22 +530,41 @@ def build_report(findings, est, kicker_rows, period, trk_gaps=None) -> str:
              f"kicker months pay 1.5x)")
     L.append("")
     if kicker_rows:
-        L.append("## Kicker (150% multiplier) — attainment review")
+        def yn(v):
+            return "?" if v is None else ("yes" if v else "no")
+        L.append("## Kicker (150%) — gate check per quarter")
         L.append("")
-        L.append("| Quarter | KPI | Target | Max QTD | Kicker paid? | All 3 targets met? |")
-        L.append("|---|---|---|---|---|---|")
+        L.append("| Quarter | Gate 1: all targets | Gate 2: outbound ≥70% | Gate 3: ICP ≥80% | Kicker applied? | Base-rate (1x) $ | Accelerated (1.5x) $ |")
+        L.append("|---|---|---|---|---|---|---|")
+        gap_total = 0.0
         for f in kicker_rows:
-            review = ""
-            if f["all_targets_met"] and not f["kicker_applied"]:
-                review = " ⚠️"
+            kp = f["kpi"]
+            g1 = " ".join(f"{k} {kp[k]['qtd']:.0f}/{kp[k]['target']:.0f}" for k in ("D4", "P1", "T1") if k in kp)
+            g2 = (f"{f['outbound_d4']}/{f['outbound_need']:.0f}"
+                  if f["outbound_need"] is not None else "?")
+            icp = f"need ≥{f['icp_need']:.0f}" if f["icp_need"] is not None else "?"
+            qualifies = f["targets_met"] and f["outbound_ok"]
+            gap = 0.5 * f["base_usd"] if (qualifies and f["base_usd"]) else 0.0
+            gap_total += gap
+            flag = ""
+            if qualifies and not f["kicker_applied"]:
+                flag = " ⚠️ gates met, kicker OFF"
+            elif f["kicker_applied"] and f["targets_met"] is False:
+                flag = " ⚠️ kicker ON but targets missed"
             L.append(
-                f"| {f['quarter']} | {f['kpi']} | {f['target']:.0f} | {f['max_qtd']:.0f} | "
-                f"{'yes' if f['kicker_applied'] else 'no'} | "
-                f"{'yes' if f['all_targets_met'] else 'no'}{review} |"
+                f"| {f['quarter']} | {yn(f['targets_met'])} ({g1}) | {yn(f['outbound_ok'])} ({g2}) | "
+                f"{yn(None)} ({icp}) | {yn(f['kicker_applied'])}{flag} | "
+                f"${f['base_usd']:,.0f} | ${f['accel_usd']:,.0f} |"
             )
         L.append("")
-        L.append("_⚠️ = all three KPI targets met but kicker not applied — worth checking, "
-                 "but confirm the outbound (>=11 D4) and 80% ICP gates, which these files do not show._")
+        L.append("_Gate 3 (ICP) can't be verified — the export has no ICP flag; confirm with Comp._")
+        if gap_total:
+            L.append("")
+            L.append(f"**Potential kicker gap: ~${gap_total:,.0f}.** In quarters that clear "
+                     "gates 1 & 2, this is 0.5× of the milestones still paid at base (1x). "
+                     "It is only owed if the plan accelerates the *whole* quarter once gates "
+                     "are met; if instead only units above target accelerate, the base-rate "
+                     "rows are correct. Worth confirming the mechanic with Comp.")
         L.append("")
     if trk_gaps is not None:
         total = sum(len(v) for v in trk_gaps.values())
@@ -581,7 +631,7 @@ def main(argv=None):
     alias = load_alias(args.alias)
 
     findings, est = reconcile(sf, paid, adj, args.period, trueup, alias)
-    kicker_rows = kicker_summary(paid)
+    kicker_rows = kicker_check(sf, paid)
 
     trk = load_tracker(args.tracker)
     trk_gaps = tracker_gaps(sf, trk, args.period) if trk is not None else None
