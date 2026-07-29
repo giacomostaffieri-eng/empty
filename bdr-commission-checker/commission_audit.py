@@ -441,19 +441,23 @@ def kicker_check(sf, paid: list[PaidRow]) -> list[dict]:
     """Per-quarter 150% kicker verdict against the real gates.
 
     Evaluates gate 1 (all three targets) from Workday QTD, gate 2 (outbound D4
-    share) from Salesforce LeadSource, and reports gate 3 (ICP) as unverifiable
-    since the export carries no ICP flag. Also sums base-rate (1x) vs accelerated
-    (1.5x) USD per quarter: when a quarter clears the gates but still has base-rate
-    milestones, that 0.5x delta is a *potential* underpayment worth querying —
-    depending on whether your plan accelerates the whole quarter or only the units
-    above target.
+    share) from Salesforce LeadSource, and gate 3 (ICP D4 share) from the account
+    ICP flag. Sums base-rate (1x) vs accelerated (1.5x) USD per quarter.
+
+    The accelerator ramps *prospectively*: you are paid at base until QTD crosses
+    100% of target, then subsequent milestones pay 1.5x. So base-rate milestones
+    booked *before* crossing target are expected and correct. A genuine underpaid
+    kicker is only a milestone paid at base (multiplier < 2) whose own QTD had
+    *already exceeded* the target (qtd > target) — that is summed as
+    `misapplied_usd` and is the real thing to query.
     """
     q: dict[str, dict] = {}
     for p in paid:
         quarter = _quarter(p.statement)
         if quarter == "?":
             continue
-        e = q.setdefault(quarter, {"kpi": {}, "base_usd": 0.0, "accel_usd": 0.0})
+        e = q.setdefault(quarter, {"kpi": {}, "base_usd": 0.0, "accel_usd": 0.0,
+                                   "misapplied_usd": 0.0})
         d = e["kpi"].setdefault(p.kpi, {"target": 0.0, "qtd": 0.0, "kicker": False})
         d["target"] = p.target or d["target"]
         d["qtd"] = max(d["qtd"], p.qtd)
@@ -462,6 +466,9 @@ def kicker_check(sf, paid: list[PaidRow]) -> list[dict]:
             e["accel_usd"] += p.usd
         else:
             e["base_usd"] += p.usd
+            # base rate even though target was already exceeded at this milestone
+            if p.target > 0 and p.qtd > p.target:
+                e["misapplied_usd"] += p.usd
 
     outbound_d4: dict[str, int] = {}
     icp_d4: dict[str, int] = {}
@@ -502,6 +509,7 @@ def kicker_check(sf, paid: list[PaidRow]) -> list[dict]:
             "kicker_applied": applied,
             "base_usd": q[quarter]["base_usd"],
             "accel_usd": q[quarter]["accel_usd"],
+            "misapplied_usd": q[quarter]["misapplied_usd"],
         })
     return rows
 
@@ -579,11 +587,14 @@ def build_report(findings, est, kicker_rows, period, trk_gaps=None) -> str:
             if f["icp_ok"] is None:
                 any_icp_unknown = True
             qualifies = f["targets_met"] and f["outbound_ok"] and (f["icp_ok"] is not False)
-            gap = 0.5 * f["base_usd"] if (qualifies and f["base_usd"]) else 0.0
+            # A real miss = base-rate milestones booked AFTER target was crossed.
+            gap = 0.5 * f["misapplied_usd"] if (qualifies and f["misapplied_usd"]) else 0.0
             gap_total += gap
             flag = ""
             if qualifies and not f["kicker_applied"]:
                 flag = " ⚠️ gates met, kicker OFF"
+            elif qualifies and gap:
+                flag = " ⚠️ some base-rate after target crossed (mechanic?)"
             elif f["kicker_applied"] and (f["targets_met"] is False or f["outbound_ok"] is False or f["icp_ok"] is False):
                 flag = " ⚠️ kicker ON but a gate missed"
             L.append(
@@ -592,16 +603,24 @@ def build_report(findings, est, kicker_rows, period, trk_gaps=None) -> str:
                 f"${f['base_usd']:,.0f} | ${f['accel_usd']:,.0f} |"
             )
         L.append("")
+        L.append("_The accelerator ramps prospectively: base rate until QTD crosses the "
+                 "target, then 1.5× after. Base-rate pay from that pre-target ramp is normal "
+                 "and **not** owed — the Base-rate column is shown for transparency, not as a gap._")
         if any_icp_unknown:
-            L.append(f"_Gate 3 (ICP) shown as '?' where the account's `{ICP_ACCOUNT_FIELD}` is "
+            L.append(f"_Gate 3 (ICP) shows '?' where the account's `{ICP_ACCOUNT_FIELD}` is "
                      "absent from the export — pull that field (or set SF_ICP_FIELD) to verify it._")
         if gap_total:
             L.append("")
-            L.append(f"**Potential kicker gap: ~${gap_total:,.0f}.** In quarters that clear "
-                     "gates 1 & 2, this is 0.5× of the milestones still paid at base (1x). "
-                     "It is only owed if the plan accelerates the *whole* quarter once gates "
-                     "are met; if instead only units above target accelerate, the base-rate "
-                     "rows are correct. Worth confirming the mechanic with Comp.")
+            L.append(f"**Possible kicker under-application (mechanic-dependent): ~${gap_total:,.0f}.** "
+                     "These are milestones paid at base (1×) after QTD had already passed target. "
+                     "They're owed only if the accelerator is applied *per-milestone*; if it's "
+                     "applied *per-month* (base for the whole month you cross in, 1.5× thereafter) "
+                     "they're correct. The data shows a clean per-month pattern, so this is most "
+                     "likely correct — but one line to Comp on the mechanic settles it.")
+        else:
+            L.append("")
+            L.append("_No kicker under-application: every milestone after target was crossed "
+                     "was paid at 1.5×._")
         L.append("")
     if trk_gaps is not None:
         total = sum(len(v) for v in trk_gaps.values())
