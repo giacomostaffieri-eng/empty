@@ -120,8 +120,12 @@ in the tracker instead means two *distinct* opportunities → two commissions.
 
 - **Missing per KPI** (T1 → P1 → D4, highest value first): stage, rating, hold
   flag, an estimated value, and a note (owed / lost-after-milestone / Bronze).
-- **Kicker attainment review** per quarter — flags “targets met but kicker off”
-  for review (it can't see the outbound/ICP gates, so it never asserts an error).
+- **Kicker (150%) gate check** per quarter — evaluates all three L2 gates:
+  100% of the D4/P1/T1 targets, outbound D4 ≥70% of target (from `LeadSource`),
+  and ICP D4 ≥80% of target (from the account's `Sales_Ops_TP_Status__c` flag).
+  It flags quarters where the gates are met but the kicker wasn't applied, and
+  sums base-rate (1×) vs accelerated (1.5×) pay so you can query any base-rate
+  milestones left in a qualifying quarter.
 - **Tracker cross-check** (if `--tracker` given): Salesforce milestones absent
   from the tracker — usually a crediting gap upstream of payroll.
 

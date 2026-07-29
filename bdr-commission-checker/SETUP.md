@@ -62,6 +62,13 @@ The defaults match the standard BDR setup. Override via env vars only if needed:
 |---|---|---|
 | `SF_BDR_FIELD` | API name of the "BDR" field on Opportunity | `BDR_Name__c` |
 | `SF_BDR_USER_ID` | Force which user's opps to pull (18-char Id) | your logged-in user |
+| `SF_ICP_FIELD` | Account field flagging ICP (for the kicker's 80%-ICP gate) | `Sales_Ops_TP_Status__c` |
+| `SF_ICP_VALUES` | Value(s) on that field that count as ICP (comma-separated) | `ICP` |
+
+The kicker's ICP gate reads the account field `Sales_Ops_TP_Status__c` (a value of
+`ICP` = compliant). If your org marks ICP differently, point `SF_ICP_FIELD` /
+`SF_ICP_VALUES` at the right field/value; when the field is missing the report
+shows the ICP gate as "?" rather than guessing.
 
 ## Verify the connection
 

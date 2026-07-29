@@ -33,13 +33,17 @@ import subprocess
 
 # Field names the audit relies on. Kept here so an org with slightly different
 # API names can adjust them in one place (or via SF_* env overrides below).
+BDR_FIELD = os.getenv("SF_BDR_FIELD", "BDR_Name__c")
+# Account field that flags ICP compliance (for the kicker's 80%-ICP gate).
+ICP_FIELD = os.getenv("SF_ICP_FIELD", "Sales_Ops_TP_Status__c")
+
 FIELDS = [
     "Name", "StageName", "Account_Incentive_Rating__c",
     "Disco_Call_Date__c", "Discovery_Call_Status__c",
     "DateSettoP1__c", "DateSettoT1__c", "Finance_Go_Live__c",
     "LeadSource", "Commission_Hold__c", "XCommission_Hold__c",
+    f"Account.{ICP_FIELD}",
 ]
-BDR_FIELD = os.getenv("SF_BDR_FIELD", "BDR_Name__c")
 
 
 def _soql(user_id: str) -> str:

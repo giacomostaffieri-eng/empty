@@ -77,6 +77,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import sys
 import unicodedata
@@ -199,6 +200,7 @@ class KpiEvent:
     lead_source: str
     hold: bool
     rating: str
+    icp: bool | None = None   # ICP-compliant account? None = unknown (field absent)
 
 
 @dataclass
@@ -235,6 +237,7 @@ def events_from_records(records: list[dict]) -> dict[str, list[KpiEvent]]:
     out: dict[str, list[KpiEvent]] = {"D4": [], "P1": [], "T1": []}
     for r in records:
         hold = bool(r.get("Commission_Hold__c")) or bool(r.get("XCommission_Hold__c"))
+        icp = _record_icp(r)
         for kpi, f in fields.items():
             d = _to_iso(r.get(f))
             # A D4 only earns commission if the discovery/explore call was actually
@@ -252,9 +255,27 @@ def events_from_records(records: list[dict]) -> dict[str, list[KpiEvent]]:
                         lead_source=r.get("LeadSource", ""),
                         hold=hold,
                         rating=(r.get("Account_Incentive_Rating__c") or "").strip(),
+                        icp=icp,
                     )
                 )
     return out
+
+
+# The account field flagging ICP compliance, and the value(s) that count as ICP.
+# Override via env if your org uses a different field/value (see SETUP.md).
+ICP_ACCOUNT_FIELD = os.getenv("SF_ICP_FIELD", "Sales_Ops_TP_Status__c")
+ICP_POSITIVE_VALUES = {v.strip().lower() for v in os.getenv("SF_ICP_VALUES", "ICP").split(",")}
+
+
+def _record_icp(r: dict) -> bool | None:
+    """True/False if the account's ICP field is present, None if absent (unknown)."""
+    acct = r.get("Account")
+    if isinstance(acct, dict) and ICP_ACCOUNT_FIELD in acct:
+        return str(acct.get(ICP_ACCOUNT_FIELD) or "").strip().lower() in ICP_POSITIVE_VALUES
+    flat = r.get("Account." + ICP_ACCOUNT_FIELD)
+    if flat is not None:
+        return str(flat).strip().lower() in ICP_POSITIVE_VALUES
+    return None
 
 
 def _classify(header_rows: list[list[str]]) -> str | None:
@@ -443,10 +464,16 @@ def kicker_check(sf, paid: list[PaidRow]) -> list[dict]:
             e["base_usd"] += p.usd
 
     outbound_d4: dict[str, int] = {}
+    icp_d4: dict[str, int] = {}
+    icp_known: dict[str, bool] = {}
     for ev in sf.get("D4", []):
+        qq = _quarter(ev.date)
         if ev.lead_source.strip().lower() in OUTBOUND_SOURCES:
-            qq = _quarter(ev.date)
             outbound_d4[qq] = outbound_d4.get(qq, 0) + 1
+        if ev.icp is not None:
+            icp_known[qq] = True
+            if ev.icp:
+                icp_d4[qq] = icp_d4.get(qq, 0) + 1
 
     rows = []
     for quarter in sorted(q):
@@ -459,6 +486,8 @@ def kicker_check(sf, paid: list[PaidRow]) -> list[dict]:
         d4_target = kp.get("D4", {}).get("target", 0)
         outb = outbound_d4.get(quarter, 0)
         outbound_ok = outb >= KICKER_OUTBOUND_FRACTION * d4_target if d4_target else None
+        icpn = icp_d4.get(quarter, 0)
+        icp_ok = (icpn >= KICKER_ICP_FRACTION * d4_target) if (d4_target and icp_known.get(quarter)) else None
         applied = any(v.get("kicker") for v in kp.values())
         rows.append({
             "quarter": quarter,
@@ -466,7 +495,9 @@ def kicker_check(sf, paid: list[PaidRow]) -> list[dict]:
             "targets_met": targets_met,
             "outbound_d4": outb,
             "outbound_need": round(KICKER_OUTBOUND_FRACTION * d4_target, 1) if d4_target else None,
+            "icp_d4": icpn,
             "icp_need": round(KICKER_ICP_FRACTION * d4_target, 1) if d4_target else None,
+            "icp_ok": icp_ok,
             "outbound_ok": outbound_ok,
             "kicker_applied": applied,
             "base_usd": q[quarter]["base_usd"],
@@ -537,27 +568,33 @@ def build_report(findings, est, kicker_rows, period, trk_gaps=None) -> str:
         L.append("| Quarter | Gate 1: all targets | Gate 2: outbound ≥70% | Gate 3: ICP ≥80% | Kicker applied? | Base-rate (1x) $ | Accelerated (1.5x) $ |")
         L.append("|---|---|---|---|---|---|---|")
         gap_total = 0.0
+        any_icp_unknown = False
         for f in kicker_rows:
             kp = f["kpi"]
             g1 = " ".join(f"{k} {kp[k]['qtd']:.0f}/{kp[k]['target']:.0f}" for k in ("D4", "P1", "T1") if k in kp)
             g2 = (f"{f['outbound_d4']}/{f['outbound_need']:.0f}"
                   if f["outbound_need"] is not None else "?")
-            icp = f"need ≥{f['icp_need']:.0f}" if f["icp_need"] is not None else "?"
-            qualifies = f["targets_met"] and f["outbound_ok"]
+            g3 = (f"{f['icp_d4']}/{f['icp_need']:.0f}"
+                  if (f["icp_need"] is not None and f["icp_ok"] is not None) else "?")
+            if f["icp_ok"] is None:
+                any_icp_unknown = True
+            qualifies = f["targets_met"] and f["outbound_ok"] and (f["icp_ok"] is not False)
             gap = 0.5 * f["base_usd"] if (qualifies and f["base_usd"]) else 0.0
             gap_total += gap
             flag = ""
             if qualifies and not f["kicker_applied"]:
                 flag = " ⚠️ gates met, kicker OFF"
-            elif f["kicker_applied"] and f["targets_met"] is False:
-                flag = " ⚠️ kicker ON but targets missed"
+            elif f["kicker_applied"] and (f["targets_met"] is False or f["outbound_ok"] is False or f["icp_ok"] is False):
+                flag = " ⚠️ kicker ON but a gate missed"
             L.append(
                 f"| {f['quarter']} | {yn(f['targets_met'])} ({g1}) | {yn(f['outbound_ok'])} ({g2}) | "
-                f"{yn(None)} ({icp}) | {yn(f['kicker_applied'])}{flag} | "
+                f"{yn(f['icp_ok'])} ({g3}) | {yn(f['kicker_applied'])}{flag} | "
                 f"${f['base_usd']:,.0f} | ${f['accel_usd']:,.0f} |"
             )
         L.append("")
-        L.append("_Gate 3 (ICP) can't be verified — the export has no ICP flag; confirm with Comp._")
+        if any_icp_unknown:
+            L.append(f"_Gate 3 (ICP) shown as '?' where the account's `{ICP_ACCOUNT_FIELD}` is "
+                     "absent from the export — pull that field (or set SF_ICP_FIELD) to verify it._")
         if gap_total:
             L.append("")
             L.append(f"**Potential kicker gap: ~${gap_total:,.0f}.** In quarters that clear "
