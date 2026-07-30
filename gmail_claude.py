@@ -1,17 +1,23 @@
 """
-Gmail + Claude automation: read emails, extract data, auto-reply.
+Gmail + Claude automation: read emails, extract data, auto-reply, and follow up.
 
 Setup:
   1. Create a Google Cloud project, enable Gmail API, download credentials.json
   2. Set ANTHROPIC_API_KEY in .env
   3. pip install -r requirements.txt
-  4. python gmail_claude.py  (first run opens browser for OAuth)
+  4. python gmail_claude.py            (first run opens browser for OAuth)
+
+Modes:
+  python gmail_claude.py inbox     process unread emails and auto-reply (default)
+  python gmail_claude.py followup  nudge sent threads still awaiting a reply
 """
 
 import os
 import base64
 import json
+import argparse
 from email.mime.text import MIMEText
+from email.utils import parseaddr
 from dotenv import load_dotenv
 
 import anthropic
@@ -26,6 +32,12 @@ load_dotenv()
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 MAX_EMAILS = 10  # how many unread emails to process per run
+
+# Follow-up defaults: nudge threads where I sent the last message and it has been
+# sitting without a reply for a while (but not so long it is no longer worth it).
+FOLLOWUP_MIN_DAYS = 3   # give the recipient at least this many days to respond
+FOLLOWUP_MAX_DAYS = 14  # don't chase threads older than this
+MAX_FOLLOWUPS = 10      # how many awaiting-reply threads to surface per run
 
 
 # ── Gmail auth ──────────────────────────────────────────────────────────────
@@ -163,6 +175,137 @@ def mark_as_read(email_id: str) -> str:
     return json.dumps({"status": "marked_as_read", "email_id": email_id})
 
 
+# ── Follow-up tools ──────────────────────────────────────────────────────────
+
+_my_address = None  # cached lowercase email address of the authenticated user
+
+
+def _get_my_address() -> str:
+    """Return (and cache) the authenticated user's own email address, lowercased."""
+    global _my_address
+    if _my_address is None:
+        profile = _service.users().getProfile(userId="me").execute()
+        _my_address = profile.get("emailAddress", "").lower()
+    return _my_address
+
+
+@beta_tool
+def find_sent_awaiting_reply(
+    min_days_ago: int = FOLLOWUP_MIN_DAYS,
+    max_days_ago: int = FOLLOWUP_MAX_DAYS,
+    max_results: int = MAX_FOLLOWUPS,
+) -> str:
+    """Find email threads where I sent the last message and no one has replied.
+
+    Scans recently sent mail and keeps only threads whose most recent message
+    was sent by me, meaning I'm still awaiting a reply.
+
+    Args:
+        min_days_ago: Only include threads whose last message is at least this
+            many days old (gives the recipient time to respond). Default 3.
+        max_days_ago: Ignore threads whose last message is older than this many
+            days (too stale to chase). Default 14.
+        max_results: Maximum number of threads to return. Default 10.
+    """
+    me = _get_my_address()
+    # Sent by me, last activity within [min_days_ago, max_days_ago].
+    query = f"in:sent newer_than:{max_days_ago}d older_than:{min_days_ago}d"
+    results = _service.users().messages().list(
+        userId="me", q=query, maxResults=max_results * 4,
+    ).execute()
+    messages = results.get("messages", [])
+
+    seen_threads = set()
+    awaiting = []
+    for msg in messages:
+        thread_id = msg.get("threadId")
+        if not thread_id or thread_id in seen_threads:
+            continue
+        seen_threads.add(thread_id)
+
+        thread = _service.users().threads().get(
+            userId="me", id=thread_id, format="metadata",
+            metadataHeaders=["From", "To", "Subject", "Date"],
+        ).execute()
+        thread_msgs = thread.get("messages", [])
+        if not thread_msgs:
+            continue
+
+        last = thread_msgs[-1]
+        headers = {h["name"]: h["value"] for h in last["payload"]["headers"]}
+        last_from = parseaddr(headers.get("From", ""))[1].lower()
+        # If someone replied after me, the last message won't be from me.
+        if last_from != me:
+            continue
+
+        first_headers = {h["name"]: h["value"] for h in thread_msgs[0]["payload"]["headers"]}
+        awaiting.append({
+            "thread_id": thread_id,
+            "to": headers.get("To", ""),
+            "subject": first_headers.get("Subject", ""),
+            "last_sent_date": headers.get("Date", ""),
+            "message_count": len(thread_msgs),
+            "snippet": last.get("snippet", ""),
+        })
+        if len(awaiting) >= max_results:
+            break
+
+    return json.dumps({"awaiting_reply": awaiting})
+
+
+@beta_tool
+def send_followup(thread_id: str, followup_text: str) -> str:
+    """Send a follow-up message on an existing thread I'm awaiting a reply on.
+
+    Args:
+        thread_id: The Gmail thread ID (from find_sent_awaiting_reply).
+        followup_text: The plain-text body of the follow-up message.
+    """
+    me = _get_my_address()
+    thread = _service.users().threads().get(
+        userId="me", id=thread_id, format="metadata",
+        metadataHeaders=["From", "To", "Subject", "Message-ID", "References"],
+    ).execute()
+    thread_msgs = thread.get("messages", [])
+    if not thread_msgs:
+        return json.dumps({"status": "error", "reason": "empty thread", "thread_id": thread_id})
+
+    last = thread_msgs[-1]
+    headers = {h["name"]: h["value"] for h in last["payload"]["headers"]}
+    last_from = parseaddr(headers.get("From", ""))[1].lower()
+    if last_from != me:
+        return json.dumps({
+            "status": "skipped",
+            "reason": "recipient already replied since last check",
+            "thread_id": thread_id,
+        })
+
+    subject = headers.get("Subject", "")
+    if not subject.lower().startswith("re:"):
+        subject = "Re: " + subject
+
+    # Reply to the people I originally addressed (the "To" of my last message).
+    recipient = headers.get("To", "")
+
+    last_message_id = headers.get("Message-ID", "")
+    references = headers.get("References", "")
+    references = (references + " " + last_message_id).strip() if references else last_message_id
+
+    mime = MIMEText(followup_text)
+    mime["To"] = recipient
+    mime["Subject"] = subject
+    mime["In-Reply-To"] = last_message_id
+    mime["References"] = references
+
+    raw = base64.urlsafe_b64encode(mime.as_bytes()).decode()
+    _service.users().messages().send(
+        userId="me",
+        body={"raw": raw, "threadId": thread_id},
+    ).execute()
+
+    return json.dumps({"status": "sent", "thread_id": thread_id, "to": recipient})
+
+
 # ── Agent loop ───────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are an intelligent email assistant with access to Gmail.
@@ -187,22 +330,46 @@ Never reply to automated system emails, mailing lists, or spam.
 """
 
 
-def run_agent():
-    global _service
-    _service = get_gmail_service()
+FOLLOWUP_SYSTEM_PROMPT = """You are an email assistant that sends polite follow-ups.
 
+Your job for each run:
+1. Call find_sent_awaiting_reply to get threads where I sent the last message and
+   the recipient has not replied yet.
+2. For each thread, decide whether a follow-up is warranted:
+   - Send a follow-up if it looks like I asked a question or expected a response
+     (a request, a proposal, a scheduling ask, etc.).
+   - Skip threads that clearly don't need a nudge (e.g. I sent a "thanks" or a
+     final acknowledgement, a one-way FYI, or an automated/no-reply recipient).
+3. When following up, write a short, friendly, professional message that:
+   - Gently references the previous email without repeating it verbatim.
+   - Restates the specific ask or question so it's easy to respond to.
+   - Matches the language of the original thread.
+   - Never sounds pushy or guilt-trips the recipient.
+4. After processing all threads, output a JSON summary:
+   {
+     "checked": <count>,
+     "followed_up": [{"thread_id": ..., "subject": ..., "to": ...}],
+     "skipped": [{"thread_id": ..., "subject": ..., "reason": ...}]
+   }
+
+Send at most one follow-up per thread per run.
+"""
+
+
+def _run(system_prompt, tools, user_message, banner):
+    """Drive the tool_runner loop and print the agent's final summary."""
     client = anthropic.Anthropic()
 
     runner = client.beta.messages.tool_runner(
         model="claude-opus-4-8",
         max_tokens=16000,
         thinking={"type": "adaptive"},
-        system=SYSTEM_PROMPT,
-        tools=[list_unread_emails, get_email_body, send_reply, mark_as_read],
-        messages=[{"role": "user", "content": "Process my unread emails now."}],
+        system=system_prompt,
+        tools=tools,
+        messages=[{"role": "user", "content": user_message}],
     )
 
-    print("Starting Gmail agent...\n")
+    print(banner + "\n")
     final_text = ""
     for message in runner:
         for block in message.content:
@@ -213,5 +380,45 @@ def run_agent():
     print(final_text)
 
 
+def run_followup_agent():
+    global _service
+    _service = get_gmail_service()
+    _run(
+        FOLLOWUP_SYSTEM_PROMPT,
+        [find_sent_awaiting_reply, send_followup, get_email_body],
+        "Check for emails awaiting a reply and send follow-ups where appropriate.",
+        "Starting Gmail follow-up agent...",
+    )
+
+
+def run_agent():
+    global _service
+    _service = get_gmail_service()
+    _run(
+        SYSTEM_PROMPT,
+        [list_unread_emails, get_email_body, send_reply, mark_as_read],
+        "Process my unread emails now.",
+        "Starting Gmail agent...",
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Gmail + Claude automation agent.")
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        default="inbox",
+        choices=["inbox", "followup"],
+        help="inbox: process unread emails and auto-reply (default). "
+             "followup: nudge sent threads still awaiting a reply.",
+    )
+    args = parser.parse_args()
+
+    if args.mode == "followup":
+        run_followup_agent()
+    else:
+        run_agent()
+
+
 if __name__ == "__main__":
-    run_agent()
+    main()
