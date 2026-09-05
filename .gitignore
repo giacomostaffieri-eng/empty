@@ -3,3 +3,6 @@ token.json
 credentials.json
 __pycache__/
 *.pyc
+
+# generated PDFs
+pdf/
