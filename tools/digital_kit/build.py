@@ -25,15 +25,22 @@ from extract import extract
 # are restated. Every substitution the players need to know about lives here so
 # the rules page and the cards can never drift apart.
 RULE_SUBS = [
-    (r'\*\*YES or NO Secret Answer Card\*\*',
+    # The kits phrase the printed answer cards several ways, so match loosely.
+    (r'\*{0,2}YES or NO (?:Secret )?Answer Card\*{0,2}',
      'the **SÌ or NO screen** in their packet (pages 2 and 3)'),
-    (r'their Secret Answer Card \(only the asker sees it\)',
-     'the **SÌ or NO screen** in their packet (only the asker sees it)'),
-    (r'Steal 1 Action Token from another player and add it to your own stash\.',
+    (r'(?:their|the) (?:Secret )?Answer Card',
+     'the **SÌ or NO screen** in their packet'),
+    (r'Steal 1 Action Token from another player and add it to your (?:own )?stash\.',
      'Choose another player: they may **not use any ability during the next Chapter**.'),
+    (r'Pay 1, take 1 &mdash; stay funded while starving a rival\.|Pay 1, take 1 — stay funded while starving a rival\.',
+     'Play it on whoever is about to make a move, and they lose their next one.'),
     (r'takes \*\*1 Token from the Bank\*\* AND secretly peeks',
      'may use **one extra ability this Chapter** AND secretly peeks'),
 ]
+
+# Anything still pointing at a printed component after the substitutions above
+# is a rule nobody can follow on a phone, so the build refuses to emit it.
+PHYSICAL = re.compile(r'\b(?:Tokens?|Bank|Answer Cards?|stash)\b')
 
 # "Cost: 2 Tokens" marked the powerful abilities. With no economy to save up in,
 # the same tension comes from locking them to the second half of the game.
@@ -57,6 +64,24 @@ def apply_subs(text):
     for pattern, replacement in RULE_SUBS:
         text = re.sub(pattern, replacement, text)
     return text
+
+
+def check_playable(kit):
+    """Every leftover reference to a component that no longer exists."""
+    leftovers = []
+    for char in kit['characters']:
+        texts = [(char['name'], f, char[f])
+                 for f in ('read_aloud', 'integrated_secret', 'role_text')]
+        for ability in char['abilities']:
+            texts += [(f"{char['name']} / {ability['title']}", f, ability[f])
+                      for f in ('body', 'tip')]
+        for where, field, text in texts:
+            for m in PHYSICAL.finditer(apply_subs(text)):
+                leftovers.append(f'{where} [{field}]: {m.group(0)}')
+    for clue in kit['clues']:
+        for m in PHYSICAL.finditer(apply_subs(clue['body'])):
+            leftovers.append(f"clue {clue['title']}: {m.group(0)}")
+    return leftovers
 
 
 def ability_meta(ability):
@@ -818,6 +843,10 @@ def main():
     args = ap.parse_args()
 
     kit = extract(args.kit)
+    leftovers = check_playable(kit)
+    if leftovers:
+        raise SystemExit('unplayable references left in the text:\n  '
+                         + '\n  '.join(leftovers))
     chars = kit['characters']
     clues = sorted(kit['clues'], key=lambda c: c['chapter'])
 

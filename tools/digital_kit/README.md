@@ -37,9 +37,12 @@ Neither survives a phone-only game, so:
 - **Abilities** — no token economy. Each ability is once per game, at most one
   ability per chapter, and the ones that cost 2 tokens are locked to Chapters
   3–4 so the powerful plays still have to be saved.
-- Two cards referenced components directly and are restated in `RULE_SUBS`:
-  the Detective's interrogation, and the Heir's token theft (now: the target
-  loses their ability for the next Chapter).
+- Cards that referenced components directly are restated in `RULE_SUBS`: the
+  interrogation abilities, and the token-theft ones (now: the target loses
+  their ability for the next Chapter). The kits phrase these differently from
+  each other, so the patterns are deliberately loose and `check_playable`
+  fails the build if any reference to a token, the Bank or an answer card
+  survives.
 - **Voting** — each player types a name in their phone's notes app, then all
   reveal at once.
 
