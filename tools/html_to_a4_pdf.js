@@ -1,18 +1,9 @@
 const { chromium } = require('playwright');
-const { execFileSync } = require('child_process');
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const { buildFontCss } = require('./fonts');
 
 const SHEET_MM = 296.5;          // usable height on a 297mm A4 sheet
 const MIN_SCALE = 0.85;          // below this, let the page flow onto extra sheets
-
-const FONTS_HREF = 'https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900'
-  + '&family=Cinzel:wght@700;900&family=Special+Elite'
-  + '&family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Pirata+One&family=Nosifer&display=swap';
-
-const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
-  + 'Chrome/131.0.0.0 Safari/537.36';
 
 const GLYPHS = {
   'dagger': '\u{1F5E1}\u{FE0F}',
@@ -76,25 +67,6 @@ body { margin: 0 !important; padding: 0 !important; background: #fff !important;
   page-break-inside: avoid;
 }
 `;
-
-// Fetch the Google Fonts stylesheet and inline every woff2 as a data URI, so
-// the render never depends on the browser reaching the network.
-function buildFontCss() {
-  const cachePath = path.join(os.tmpdir(), 'a4-fonts-inline.css');
-  if (fs.existsSync(cachePath)) return fs.readFileSync(cachePath, 'utf8');
-
-  const get = (url, binary) => execFileSync('curl', ['-sSfL', '-A', UA, url],
-    { encoding: binary ? 'buffer' : 'utf8', maxBuffer: 64 * 1024 * 1024 });
-
-  let css = get(FONTS_HREF, false);
-  const urls = [...new Set(css.match(/https:\/\/fonts\.gstatic\.com\/[^)]+/g) || [])];
-  for (const u of urls) {
-    const b64 = get(u, true).toString('base64');
-    css = css.split(u).join('data:font/woff2;base64,' + b64);
-  }
-  fs.writeFileSync(cachePath, css);
-  return css;
-}
 
 const FONT_CSS = buildFontCss();
 
