@@ -1,0 +1,458 @@
+/* ============================================================
+   Fungies.io deal documents — print design system
+   ============================================================ */
+
+:root {
+  --ink:       #16222D;
+  --ink-soft:  #3C4C5A;
+  --muted:     #66788A;
+  --rule:      #DFE6EC;
+  --rule-soft: #EDF2F6;
+  --bg-soft:   #F6F9FB;
+  --navy:      #0B2545;
+  --navy-2:    #17416E;
+  --accent:    #0E8C7C;
+  --accent-bg: #E7F5F2;
+
+  --critical:    #A82525;
+  --critical-bg: #FBEDEC;
+  --high:        #B85318;
+  --high-bg:     #FDF1E9;
+  --medhigh:     #9A6B0E;
+  --medhigh-bg:  #FCF5E6;
+  --medium:      #3E6494;
+  --medium-bg:   #EDF2F9;
+  --low:         #64737F;
+  --low-bg:      #F1F4F6;
+  --positive:    #1B6F47;
+  --positive-bg: #E9F5EE;
+}
+
+@page {
+  size: A4;
+  margin: 15mm 14mm 17mm 14mm;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+body {
+  font-family: "Liberation Sans", Arial, Helvetica, sans-serif;
+  font-size: 9.3pt;
+  line-height: 1.52;
+  color: var(--ink);
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- COVER ---------- */
+
+.cover {
+  page-break-after: always;
+  height: 262mm;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.cover-rule {
+  height: 5mm;
+  background: var(--navy);
+  position: relative;
+  margin-bottom: 16mm;
+}
+.cover-rule::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: -2.2mm;
+  width: 42mm; height: 2.2mm;
+  background: var(--accent);
+}
+.cover-eyebrow {
+  font-size: 8pt;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+  margin-bottom: 5mm;
+}
+.cover h1 {
+  font-size: 30pt;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--navy);
+  margin: 0 0 3mm 0;
+  font-weight: 700;
+  max-width: 150mm;
+}
+.cover .sub {
+  font-size: 13pt;
+  color: var(--ink-soft);
+  font-weight: 400;
+  line-height: 1.35;
+  margin: 0 0 12mm 0;
+  max-width: 150mm;
+}
+.cover-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border-top: 1px solid var(--rule);
+  margin-bottom: 10mm;
+}
+.cover-meta div {
+  padding: 3.2mm 5mm 3.2mm 0;
+  border-bottom: 1px solid var(--rule);
+}
+.cover-meta dt {
+  font-size: 7.2pt;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 1mm;
+}
+.cover-meta dd {
+  margin: 0;
+  font-size: 9.6pt;
+  color: var(--ink);
+  font-weight: 600;
+}
+.cover-spacer { flex: 1; }
+.cover-foot {
+  border-top: 2px solid var(--navy);
+  padding-top: 3mm;
+  font-size: 7.6pt;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.cover-foot strong { color: var(--critical); }
+
+/* ---------- KPI TILES ---------- */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2.6mm;
+  margin: 0 0 8mm 0;
+}
+.tile {
+  border: 1px solid var(--rule);
+  border-top: 2.4pt solid var(--navy);
+  background: var(--bg-soft);
+  padding: 3.4mm 3.4mm 3mm;
+  break-inside: avoid;
+}
+.tile.alarm { border-top-color: var(--critical); }
+.tile.alarm .tile-v { color: var(--critical); }
+.tile.good  { border-top-color: var(--accent); }
+.tile-k {
+  font-size: 6.9pt;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 1.6mm;
+  line-height: 1.3;
+}
+.tile-v {
+  font-size: 15pt;
+  font-weight: 700;
+  color: var(--navy);
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin-bottom: 1mm;
+}
+.tile-n {
+  font-size: 7.2pt;
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
+
+.tiles-3 { grid-template-columns: repeat(3, 1fr); }
+
+.tiles-label {
+  font-size: 7.6pt;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--navy);
+  font-weight: 700;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1.6mm;
+  margin-bottom: 4mm;
+}
+
+/* ---------- HEADINGS ---------- */
+
+h1, h2, h3, h4 {
+  color: var(--navy);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  break-after: avoid;
+}
+
+h1 {
+  font-size: 17pt;
+  margin: 0 0 5mm 0;
+  padding: 0 0 2.6mm 0;
+  border-bottom: 2.4pt solid var(--navy);
+  break-before: page;
+}
+h1:first-of-type { break-before: avoid; }
+
+h2 {
+  font-size: 12.6pt;
+  margin: 8mm 0 3.4mm 0;
+  padding-left: 3.4mm;
+  border-left: 3pt solid var(--accent);
+  line-height: 1.25;
+}
+
+h3 {
+  font-size: 10.2pt;
+  margin: 6mm 0 2.4mm 0;
+  color: var(--navy-2);
+}
+
+h4 {
+  font-size: 9.3pt;
+  margin: 4.5mm 0 1.8mm 0;
+  color: var(--ink);
+  text-transform: none;
+}
+
+p { margin: 0 0 2.6mm 0; }
+
+strong { font-weight: 700; color: var(--ink); }
+em { font-style: italic; }
+
+a { color: var(--navy-2); text-decoration: none; }
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 6mm 0;
+}
+
+/* ---------- LISTS ---------- */
+
+ul, ol { margin: 0 0 3mm 0; padding-left: 5.2mm; }
+li { margin-bottom: 1.3mm; }
+li > ul, li > ol { margin-top: 1.3mm; margin-bottom: 0.6mm; }
+ul li::marker { color: var(--accent); }
+ol li::marker { color: var(--navy-2); font-weight: 700; }
+
+/* ---------- TABLES ---------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 4.5mm 0;
+  font-size: 8.3pt;
+  break-inside: auto;
+}
+thead { display: table-header-group; }
+tr { break-inside: avoid; }
+
+th {
+  background: var(--navy);
+  color: #fff;
+  text-align: left;
+  font-weight: 700;
+  font-size: 7.6pt;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  padding: 2.1mm 2.3mm;
+  line-height: 1.3;
+  border-right: 1px solid rgba(255,255,255,0.14);
+}
+th:last-child { border-right: 0; }
+
+td {
+  padding: 2mm 2.3mm;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+  line-height: 1.42;
+}
+tbody tr:nth-child(even) { background: var(--bg-soft); }
+tbody tr:last-child td { border-bottom: 1px solid var(--rule); }
+
+td:first-child { font-weight: 600; }
+
+/* numeric-looking tables */
+table.fin td:not(:first-child),
+table.fin th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---------- CALLOUTS ---------- */
+
+.callout {
+  border: 1px solid var(--rule);
+  border-left: 3pt solid var(--muted);
+  background: var(--bg-soft);
+  padding: 3mm 3.4mm 2.4mm;
+  margin: 0 0 4mm 0;
+  break-inside: avoid;
+  font-size: 8.7pt;
+}
+.callout > *:last-child { margin-bottom: 0; }
+.callout p { margin-bottom: 2mm; }
+.callout ul, .callout ol { margin-bottom: 2mm; }
+.callout table { font-size: 7.9pt; margin-bottom: 2mm; }
+
+.callout::before {
+  display: block;
+  font-size: 6.9pt;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 1.8mm;
+}
+
+.callout.crit {
+  border-left-color: var(--critical);
+  background: var(--critical-bg);
+  border-color: #F0D7D5;
+}
+.callout.crit::before { content: "Critical — blocking"; color: var(--critical); }
+
+.callout.warn {
+  border-left-color: var(--high);
+  background: var(--high-bg);
+  border-color: #F5DFCD;
+}
+.callout.warn::before { content: "Flag"; color: var(--high); }
+
+.callout.gap {
+  border-left-color: var(--medhigh);
+  background: var(--medhigh-bg);
+  border-color: #F0E2C2;
+}
+.callout.gap::before { content: "Gap — not provided"; color: var(--medhigh); }
+
+.callout.note {
+  border-left-color: var(--medium);
+  background: var(--medium-bg);
+  border-color: #D8E2EF;
+}
+.callout.note::before { content: "Note"; color: var(--medium); }
+
+.callout.good {
+  border-left-color: var(--positive);
+  background: var(--positive-bg);
+  border-color: #CFE6D9;
+}
+.callout.good::before { content: "Assessment"; color: var(--positive); }
+
+.callout.quote {
+  border-left-color: var(--navy);
+  background: #fff;
+  border-color: var(--rule);
+  font-style: italic;
+  color: var(--ink-soft);
+}
+.callout.quote::before { content: "Verbatim — prospect"; color: var(--navy); font-style: normal; }
+
+/* ---------- BADGES ---------- */
+
+.badge {
+  display: inline-block;
+  font-size: 6.9pt;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.7mm 1.6mm;
+  border-radius: 1mm;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+.sev-critical { background: var(--critical); color: #fff; }
+.sev-high     { background: var(--high);     color: #fff; }
+.sev-medhigh  { background: var(--medhigh);  color: #fff; }
+.sev-medium   { background: var(--medium);   color: #fff; }
+.sev-low      { background: var(--low);      color: #fff; }
+
+.rid {
+  display: inline-block;
+  font-weight: 700;
+  font-size: 8pt;
+  color: #fff;
+  background: var(--navy);
+  padding: 0.7mm 1.7mm;
+  border-radius: 1mm;
+  letter-spacing: 0.02em;
+}
+
+/* ---------- DIAGRAM / CODE ---------- */
+
+pre {
+  background: #0B2545;
+  color: #E8EFF6;
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 6.9pt;
+  line-height: 1.42;
+  padding: 4mm;
+  margin: 0 0 4mm 0;
+  overflow: visible;
+  white-space: pre;
+  break-inside: avoid;
+  border-left: 3pt solid var(--accent);
+}
+pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+
+code {
+  font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 8.1pt;
+  background: var(--rule-soft);
+  padding: 0.3mm 1mm;
+  border-radius: 0.7mm;
+  color: var(--navy-2);
+}
+
+/* ---------- TOC ---------- */
+
+.toc-wrap {
+  break-after: page;
+  border-top: 2.4pt solid var(--navy);
+  padding-top: 4mm;
+}
+.toc-wrap > .toc-title {
+  font-size: 13pt;
+  font-weight: 700;
+  color: var(--navy);
+  margin-bottom: 4mm;
+}
+.toc ul { list-style: none; padding-left: 0; margin: 0; columns: 2; column-gap: 8mm; }
+.toc ul ul { columns: 1; padding-left: 4mm; margin-top: 0.8mm; }
+.toc li { margin-bottom: 1.3mm; break-inside: avoid; font-size: 8.3pt; }
+.toc > ul > li { font-weight: 700; color: var(--navy); margin-bottom: 2mm; }
+.toc > ul > li > a { color: var(--navy); }
+.toc ul ul li { font-weight: 400; font-size: 7.8pt; }
+.toc ul ul li a { color: var(--ink-soft); }
+
+/* ---------- MISC ---------- */
+
+blockquote {
+  margin: 0 0 4mm 0;
+  padding: 2.6mm 3.4mm;
+  border-left: 3pt solid var(--rule);
+  background: var(--bg-soft);
+  color: var(--ink-soft);
+}
+blockquote > *:last-child { margin-bottom: 0; }
+
+.lead {
+  font-size: 10.2pt;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  border-left: 3pt solid var(--accent);
+  padding-left: 3.4mm;
+  margin-bottom: 5mm;
+}
+
+.section-intro {
+  font-size: 8.7pt;
+  color: var(--muted);
+  font-style: italic;
+  margin-bottom: 3.4mm;
+}

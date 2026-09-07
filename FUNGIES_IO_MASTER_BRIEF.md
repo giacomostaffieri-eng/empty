@@ -565,6 +565,7 @@ This is the correct and expected MoR answer, and it is clean from a contracting 
 ### 9.3 Platform layer
 
 Fungies provides:
+
 - **Hosted checkout**
 - **Subscription / billing management**
 - **API and webhook layer**
