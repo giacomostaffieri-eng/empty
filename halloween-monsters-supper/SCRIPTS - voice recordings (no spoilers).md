@@ -12,7 +12,7 @@ Play `2 - For the table/RULES - slideshow.pdf` and read one block per slide. Spe
 > Welcome to *The Monsters' Supper*. Tonight you are not guests. You are monsters. And one of you is a murderer. Before we start, a few minutes on how to play. It's easy, I promise.
 
 **Slide 2 — What is this game?**
-> Tonight we are all classic monsters: vampires, ghosts, witches, giants. A famous monster hunter came to dinner with us. At midnight the lights went out, and he was murdered. The killer is sitting at this table. Our job is to find out who.
+> Tonight we are all classic monsters: vampires, ghosts, gorgons, even a Martian. A famous monster hunter came to dinner with us. At midnight the lights went out, and he was murdered. The killer is sitting at this table. Our job is to find out who.
 
 **Slide 3 — The house**
 > This is where it happened: my house, on Halloween night. The balcony, the study, the living room, the hallway, the bathroom and the kitchen. You'll find this map on page 8 of your file. When people tell you where they were, look at the map. Could they really have been there? Could they have seen something?
@@ -77,7 +77,9 @@ Record this and play it after the slideshow, while everyone has their phone on p
 >
 > Every year, on the thirty-first of October, when the living lock their doors… the monsters come out to eat.
 >
-> The Vampire leaves his villa. The Witch leaves her broom by the door. The Ghost floats in through the wall, the Creature crawls out of the water, and the Golem — the giant of clay — sets the table. This year, the Monsters' Supper is at his house. Here. Tonight.
+> The Vampire leaves his villa. The Martian parks her flying saucer on the roof. Medusa checks her snakes in the mirror. The Ghost floats in through the wall, the Creature crawls out of the water, and Beetlejuice — the ghost with the most — sets the table. This year, the Monsters' Supper is at his house. Here. Tonight.
+>
+> And for the first time, the smallest monster of all is here too: little Alma, half bat, half ghost. Tonight, she's the only one with a perfect alibi.
 >
 > *(pause)*
 >
@@ -93,7 +95,7 @@ Record this and play it after the slideshow, while everyone has their phone on p
 >
 > *(long pause, three seconds of silence)*
 >
-> Four minutes of darkness. When the lights came back, everything looked the same. The music. The candles. The crema catalana. At five past midnight, the Golem knocked on the study door. No answer. He knocked again. Then he broke it down.
+> Four minutes of darkness. When the lights came back, everything looked the same. The music. The candles. The crema catalana. At five past midnight, Beetlejuice knocked on the study door. No answer. He knocked again. Then he broke it down.
 >
 > Professor Van Helsing was dead in his chair.
 >
@@ -131,6 +133,6 @@ Record this and play it after the slideshow, while everyone has their phone on p
    4. Open talk: 4 min, hands up
    5. Point: on three, the most-pointed player defends for 30 s
 9. **Final vote** → the killers reveal themselves → open `SOLUTION - open only after the vote.pdf` and read it out loud.
-10. Bonus: vote "Best Liar" and "Best Costume".
+10. Bonus: vote "Best Liar" and "Best Costume" (Alma is not allowed to win — it would be unfair to everyone else).
 
 **Total: about 1 hour 45 minutes**, including the slideshow and the introductions. The game itself, from Chapter 1 to the vote, is about 1 hour 10 minutes.
